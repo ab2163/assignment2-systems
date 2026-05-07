@@ -18,7 +18,7 @@ def run_profile(model_name, config, mode, context_length, device="mps", batch_si
     os.makedirs(output_dir, exist_ok=True)
 
     cmd = [
-        "uv", "run", "python", "profile_model.py",
+        "python", "profile_model.py",
         "--mode", mode,
         "--context_length", str(context_length),
         "--batch_size", str(batch_size),
@@ -55,7 +55,7 @@ def run_profile(model_name, config, mode, context_length, device="mps", batch_si
 
 
 def main():
-    device = sys.argv[1] if len(sys.argv) > 1 else "mps"
+    device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
     batch_size = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 
     print(f"Device: {device} | Batch size: {batch_size}")

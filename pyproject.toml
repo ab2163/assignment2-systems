@@ -32,7 +32,7 @@ package = true
 python-preference = "managed"
 
 [tool.uv.sources]
-cs336-basics = { path = "/Users/ajinkyabhalerao/Documents/assignment1-basics/", editable = true } # Change this path to your assignment1-basics repo you want to use your own implementation!
+cs336-basics = { path = "/shared/users/ajinkyabhalerao/assignment1-basics/", editable = true } # Change this path to your assignment1-basics repo you want to use your own implementation!
 
 
 
