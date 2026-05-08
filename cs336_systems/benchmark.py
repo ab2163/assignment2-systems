@@ -3,12 +3,10 @@ import argparse
 import math
 import statistics
 import timeit
-
 import torch
 import numpy as np
-
+from contextlib import nullcontext
 from cs336_basics.lang_model import TransformerLM, AdamW, cross_entropy
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark Transformer LM")
@@ -23,7 +21,7 @@ def parse_args():
     parser.add_argument("--rope_theta", type=float, default=10000.0)
 
     # benchmarking
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--warmup_steps", type=int, default=5)
     parser.add_argument("--num_steps", type=int, default=10)
     parser.add_argument(
@@ -33,10 +31,11 @@ def parse_args():
         default="full",
         help="forward: forward only, forward_backward: forward+backward, full: forward+backward+optimizer step",
     )
-    parser.add_argument("--device", type=str, default="mps")
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--mixed_precision", action="store_true", 
+        help="Use bf16 mixed precision via torch.autocast")
 
     return parser.parse_args()
-
 
 def sync(device: str):
     """Synchronize device to ensure accurate timing."""
@@ -46,30 +45,39 @@ def sync(device: str):
     elif device == "mps":
         torch.mps.synchronize()
 
-
-def run_step(model, optimizer, inputs, targets, mode: str, device: str):
+def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_precision: bool = False):
     """Run a single step based on mode."""
+
+    # use autocast if mixed precision, otherwise nullcontext (no-op)
+    autocast_ctx = (
+        torch.autocast(device_type=device, dtype=torch.bfloat16)
+        if mixed_precision
+        else nullcontext()
+    )
+
     if mode == "forward":
         with torch.no_grad():
-            logits = model(inputs)
-            loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            with autocast_ctx:
+                logits = model(inputs)
+                loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
 
     elif mode == "forward_backward":
         optimizer.zero_grad()
-        logits = model(inputs)
-        loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        with autocast_ctx:
+            logits = model(inputs)
+            loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         loss.backward()
 
     elif mode == "full":
         optimizer.zero_grad()
-        logits = model(inputs)
-        loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        with autocast_ctx:
+            logits = model(inputs)
+            loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         loss.backward()
         optimizer.step()
 
     sync(device)
     return loss.item()
-
 
 def main():
     args = parse_args()
@@ -117,18 +125,20 @@ def main():
     # warmup steps
     print(f"\nRunning {args.warmup_steps} warmup steps...")
     for _ in range(args.warmup_steps):
-        run_step(model, optimizer, inputs, targets, args.mode, device)
+        run_step(model, optimizer, inputs, targets, args.mode, device, args.mixed_precision)
 
     # measurement steps
     print(f"Running {args.num_steps} measurement steps...")
     timings = []
     for step in range(args.num_steps):
         start = timeit.default_timer()
-        loss = run_step(model, optimizer, inputs, targets, args.mode, device)
+        loss = run_step(model, optimizer, inputs, targets, args.mode, device, args.mixed_precision)
         end = timeit.default_timer()
         elapsed = end - start
         timings.append(elapsed)
         print(f"  step {step+1:3d} | loss {loss:.4f} | time {elapsed*1000:.2f}ms")
+    
+    print(f"Precision: {'bf16 mixed' if args.mixed_precision else 'fp32 full'}")
 
     # summary statistics
     mean_time = statistics.mean(timings)
@@ -138,7 +148,6 @@ def main():
     print(f"  std:  {std_time*1000:.2f}ms")
     print(f"  min:  {min(timings)*1000:.2f}ms")
     print(f"  max:  {max(timings)*1000:.2f}ms")
-
 
 if __name__ == "__main__":
     main()

@@ -2,18 +2,24 @@
 import subprocess
 import re
 import sys
+import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 MODELS = {
-    "small": {"d_model": 768,  "d_ff": 3072,  "num_layers": 12, "num_heads": 12},
-    "medium":{"d_model": 1024, "d_ff": 4096,  "num_layers": 24, "num_heads": 16},
+    "small":  {"d_model": 768,  "d_ff": 3072,  "num_layers": 12, "num_heads": 12},
+    "medium": {"d_model": 1024, "d_ff": 4096,  "num_layers": 24, "num_heads": 16},
+    #"large":  {"d_model": 1280, "d_ff": 5120,  "num_layers": 36, "num_heads": 20},
 }
 
 MODES = ["forward", "forward_backward", "full"]
 
-def run_benchmark(model_name, config, mode, device="mps"):
+PRECISIONS = [False, True] # False = fp32 and True = bf16 mixed
+
+def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False):
     """Run benchmark.py for a given model config and mode, return mean and std in ms."""
     cmd = [
-        "uv", "run", "python", "benchmark.py",
+        "python", "benchmark.py",
         "--mode", mode,
         "--warmup_steps", "1",
         "--num_steps", "10",
@@ -23,8 +29,11 @@ def run_benchmark(model_name, config, mode, device="mps"):
         "--num_layers", str(config["num_layers"]),
         "--num_heads",  str(config["num_heads"]),
     ]
+    if mixed_precision:
+        cmd.append("--mixed_precision")
 
-    print(f"  Running {model_name} / {mode}...", flush=True)
+    precision_str = "bf16" if mixed_precision else "fp32"
+    print(f"  Running {model_name} / {mode} / {precision_str}...", flush=True)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         output = result.stdout
@@ -48,13 +57,11 @@ def run_benchmark(model_name, config, mode, device="mps"):
         print(f"    ERROR: {e}")
         return None, None
 
-
 def format_cell(mean, std):
     """Format a mean/std pair as a table cell."""
     if mean is None:
         return "OOM/ERR"
     return f"{mean:.1f} ± {std:.1f}"
-
 
 def print_table(results):
     """Print results as a formatted table."""
@@ -83,9 +90,33 @@ def print_table(results):
 
     print("=" * (name_width + (col_width + 2) * len(MODES)))
 
+def print_comparison_table(results):
+    col_width = 20
+    name_width = 10
+
+    print(f"\n{'='*80}")
+    print("Mixed Precision Benchmark Results (mean ± std in ms)")
+    print(f"{'='*80}")
+
+    for mode in MODES:
+        print(f"\nMode: {mode}")
+        print(f"{'Model':<{name_width}} {'FP32':^{col_width}} {'BF16 Mixed':^{col_width}} {'Speedup':^10}")
+        print("-" * (name_width + col_width * 2 + 10))
+
+        for model_name in MODELS:
+            fp32_mean, fp32_std = results.get((model_name, mode, False), (None, None))
+            bf16_mean, bf16_std = results.get((model_name, mode, True), (None, None))
+
+            if fp32_mean and bf16_mean:
+                speedup = fp32_mean / bf16_mean
+                fp32_str = f"{fp32_mean:.1f} ± {fp32_std:.1f}"
+                bf16_str = f"{bf16_mean:.1f} ± {bf16_std:.1f}"
+                print(f"{model_name:<{name_width}} {fp32_str:^{col_width}} {bf16_str:^{col_width}} {speedup:^10.2f}")
+            else:
+                print(f"{model_name:<{name_width}} {'OOM/ERR':^{col_width}} {'OOM/ERR':^{col_width}} {'N/A':^10}")
 
 def main():
-    device = sys.argv[1] if len(sys.argv) > 1 else "mps"
+    device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
     print(f"Running benchmarks on device: {device}")
     print("This may take a while for larger models...\n")
 
@@ -93,11 +124,12 @@ def main():
     for model_name, config in MODELS.items():
         print(f"\n--- {model_name} ---")
         for mode in MODES:
-            mean, std = run_benchmark(model_name, config, mode, device)
-            results[(model_name, mode)] = (mean, std)
+            for mixed_precision in PRECISIONS:
+                key = (model_name, mode, mixed_precision)
+                mean, std = run_benchmark(model_name, config, mode, device, mixed_precision)
+                results[key] = (mean, std)
 
-    print_table(results)
-
+    print_comparison_table(results)
 
 if __name__ == "__main__":
     main()

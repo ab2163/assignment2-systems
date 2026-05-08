@@ -166,3 +166,4 @@ cython_debug/
 .DS_Store
 cs336_systems/profiles/
 cs336_systems/.DS_Store
+nsys_profiles/
