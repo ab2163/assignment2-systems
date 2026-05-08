@@ -10,14 +10,17 @@ MODELS = {
     "small":  {"d_model": 768,  "d_ff": 3072,  "num_layers": 12, "num_heads": 12},
     "medium": {"d_model": 1024, "d_ff": 4096,  "num_layers": 24, "num_heads": 16},
     #"large":  {"d_model": 1280, "d_ff": 5120,  "num_layers": 36, "num_heads": 20},
+    #"xl":     {"d_model": 2560, "d_ff": 10240, "num_layers": 32, "num_heads": 32},
 }
 
 MODES = ["forward", "forward_backward", "full"]
 
 PRECISIONS = [False, True] # False = fp32 and True = bf16 mixed
 
-def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False):
+def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False, mixed_precision, memory_profile=False):
     """Run benchmark.py for a given model config and mode, return mean and std in ms."""
+
+    output_name = f"memory_profiles/memory_{model_name}_{mode}.pickle"
     cmd = [
         "python", "benchmark.py",
         "--mode", mode,
@@ -31,6 +34,8 @@ def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False
     ]
     if mixed_precision:
         cmd.append("--mixed_precision")
+    if memory_profile:
+        cmd.extend(["--memory_profile", "--memory_profile_path", output_name])
 
     precision_str = "bf16" if mixed_precision else "fp32"
     print(f"  Running {model_name} / {mode} / {precision_str}...", flush=True)

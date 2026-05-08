@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--rope_theta", type=float, default=10000.0)
 
     # benchmarking
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--warmup_steps", type=int, default=5)
     parser.add_argument("--num_steps", type=int, default=10)
     parser.add_argument(
@@ -34,6 +34,11 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--mixed_precision", action="store_true", 
         help="Use bf16 mixed precision via torch.autocast")
+    parser.add_argument("--memory_profile", action="store_true",
+        help="Run memory profiler and save snapshot")
+    parser.add_argument("--memory_profile_path", type=str, 
+        default="memory_snapshot.pickle",
+        help="Output path for memory snapshot")
 
     return parser.parse_args()
 
@@ -45,7 +50,8 @@ def sync(device: str):
     elif device == "mps":
         torch.mps.synchronize()
 
-def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_precision: bool = False):
+def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_precision: bool = False, memory_profile=False, 
+             memory_profile_path="memory_snapshot.pickle"):
     """Run a single step based on mode."""
 
     # use autocast if mixed precision, otherwise nullcontext (no-op)
@@ -54,6 +60,9 @@ def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_pr
         if mixed_precision
         else nullcontext()
     )
+
+    if memory_profile:
+        torch.cuda.memory._record_memory_history(max_entries=1000000)
 
     if mode == "forward":
         with torch.no_grad():
@@ -77,6 +86,12 @@ def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_pr
         optimizer.step()
 
     sync(device)
+
+    if memory_profile:
+        torch.cuda.memory._dump_snapshot(memory_profile_path)
+        torch.cuda.memory._record_memory_history(enabled=None)
+        print(f"Memory snapshot saved to {memory_profile_path}")
+
     return loss.item()
 
 def main():
@@ -131,8 +146,11 @@ def main():
     print(f"Running {args.num_steps} measurement steps...")
     timings = []
     for step in range(args.num_steps):
+        memory_profile = args.memory_profile and step == 0 # only profile first step
+        memory_profile_path = args.memory_profile_path if memory_profile else "memory_snapshot.pickle"
         start = timeit.default_timer()
-        loss = run_step(model, optimizer, inputs, targets, args.mode, device, args.mixed_precision)
+        loss = run_step(model, optimizer, inputs, targets, args.mode, device, args.mixed_precision, memory_profile=memory_profile,
+            memory_profile_path=args.memory_profile_path,)
         end = timeit.default_timer()
         elapsed = end - start
         timings.append(elapsed)
