@@ -4,20 +4,21 @@ import re
 import sys
 import os
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+#os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 MODELS = {
-    "small":  {"d_model": 768,  "d_ff": 3072,  "num_layers": 12, "num_heads": 12},
-    "medium": {"d_model": 1024, "d_ff": 4096,  "num_layers": 24, "num_heads": 16},
+    #"small":  {"d_model": 768,  "d_ff": 3072,  "num_layers": 12, "num_heads": 12},
+    #"medium": {"d_model": 1024, "d_ff": 4096,  "num_layers": 24, "num_heads": 16},
     #"large":  {"d_model": 1280, "d_ff": 5120,  "num_layers": 36, "num_heads": 20},
-    #"xl":     {"d_model": 2560, "d_ff": 10240, "num_layers": 32, "num_heads": 32},
+    "xl":     {"d_model": 2560, "d_ff": 10240, "num_layers": 32, "num_heads": 32},
+    #"10B":    {"d_model": 4608, "d_ff": 12288, "num_layers": 50, "num_heads": 36},
 }
 
 MODES = ["forward", "forward_backward", "full"]
 
 PRECISIONS = [False, True] # False = fp32 and True = bf16 mixed
 
-def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False, mixed_precision, memory_profile=False):
+def run_benchmark(model_name, config, mode, device="cuda", mixed_precision=False, memory_profile=False):
     """Run benchmark.py for a given model config and mode, return mean and std in ms."""
 
     output_name = f"memory_profiles/memory_{model_name}_{mode}.pickle"

@@ -56,7 +56,7 @@ def run_step(model, optimizer, inputs, targets, mode: str, device: str, mixed_pr
 
     # use autocast if mixed precision, otherwise nullcontext (no-op)
     autocast_ctx = (
-        torch.autocast(device_type=device, dtype=torch.bfloat16)
+        torch.autocast(device_type=device, dtype=torch.bfloat16, cache_enabled=False)
         if mixed_precision
         else nullcontext()
     )
