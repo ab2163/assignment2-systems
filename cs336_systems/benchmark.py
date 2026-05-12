@@ -39,6 +39,12 @@ def parse_args():
     parser.add_argument("--memory_profile_path", type=str, 
         default="memory_snapshot.pickle",
         help="Output path for memory snapshot")
+    
+    # checkpointing
+    parser.add_argument("--use_checkpoint", action="store_true",
+        help="Use activation checkpointing per transformer block")
+    parser.add_argument("--checkpoint_blocks", type=int, default=1,
+        help="Number of blocks per checkpoint (1=per block, 2=every 2 blocks etc.)")
 
     return parser.parse_args()
 
@@ -111,6 +117,7 @@ def main():
         num_heads=args.num_heads,
         d_ff=d_ff,
         theta=args.rope_theta,
+        use_checkpoint=args.use_checkpoint,
     ).to(device)
 
     num_params = sum(p.numel() for p in model.parameters())
