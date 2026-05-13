@@ -45,6 +45,12 @@ def parse_args():
         help="Use activation checkpointing per transformer block")
     parser.add_argument("--checkpoint_blocks", type=int, default=1,
         help="Number of blocks per checkpoint (1=per block, 2=every 2 blocks etc.)")
+    
+    # compilation
+    parser.add_argument("--compile", action="store_true",
+        help="Compile model with torch.compile")
+    parser.add_argument("--compile_backend", type=str, default="inductor",
+        help="Backend for torch.compile (inductor, aot_eager etc.)")
 
     return parser.parse_args()
 
@@ -120,6 +126,12 @@ def main():
         use_checkpoint=args.use_checkpoint,
     ).to(device)
 
+    # compile if requested
+    if args.compile:
+        print(f"Compiling model with backend={args.compile_backend}...")
+        model = torch.compile(model, backend=args.compile_backend)
+        print("Compilation done.")
+
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Model parameters: {num_params:,}")
 
@@ -163,6 +175,7 @@ def main():
         timings.append(elapsed)
         print(f"  step {step+1:3d} | loss {loss:.4f} | time {elapsed*1000:.2f}ms")
     
+    print(f"Compiled: {'yes (' + args.compile_backend + ')' if args.compile else 'no'}")
     print(f"Precision: {'bf16 mixed' if args.mixed_precision else 'fp32 full'}")
 
     # summary statistics
